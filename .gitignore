@@ -1,0 +1,10 @@
+node_modules/
+.env
+serviceAccountKey.json
+.venv/
+uploads/
+backend.log
+backend.err
+__pycache__/
+*.pyc
+.DS_Store
