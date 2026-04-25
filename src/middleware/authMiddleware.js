@@ -23,10 +23,14 @@ const verifyToken = async (req, res, next) => {
         }
 
         const staffData = staffDoc.data();
+        const activeOrgId = staffData.activeOrganizationId;
+        const orgInfo = staffData.organizations?.find(org => org.id === activeOrgId);
+
         req.user = {
             ...decodedToken,
-            organizationId: staffData.organizationId,
-            role: staffData.role
+            organizationId: activeOrgId,
+            role: orgInfo ? orgInfo.role : null,
+            organizations: staffData.organizations || []
         };
         
         next();

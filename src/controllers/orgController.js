@@ -43,11 +43,7 @@ exports.signup = async (req, res) => {
             return res.status(400).json({ error: 'Organization name is required' });
         }
 
-        // Check if user already belongs to an org
         const staffDoc = await db.collection('staff').doc(uid).get();
-        if (staffDoc.exists) {
-            return res.status(400).json({ error: 'User is already assigned to an organization' });
-        }
 
         // Run in transaction
         await db.runTransaction(async (t) => {
@@ -59,15 +55,25 @@ exports.signup = async (req, res) => {
                 createdAt: new Date().toISOString()
             });
 
-            // Create Staff record
+            // Create or Update Staff record
             const newStaffRef = db.collection('staff').doc(uid);
-            t.set(newStaffRef, {
-                uid,
-                email,
-                organizationId: orgRef.id,
-                role: 'owner',
-                createdAt: new Date().toISOString()
-            });
+            
+            if (staffDoc.exists) {
+                const existingData = staffDoc.data();
+                const newOrgs = [...(existingData.organizations || []), { id: orgRef.id, name: orgName, role: 'owner' }];
+                t.update(newStaffRef, {
+                    organizations: newOrgs,
+                    activeOrganizationId: orgRef.id // Automatically switch to the newly created org
+                });
+            } else {
+                t.set(newStaffRef, {
+                    uid,
+                    email,
+                    activeOrganizationId: orgRef.id,
+                    organizations: [{ id: orgRef.id, name: orgName, role: 'owner' }],
+                    createdAt: new Date().toISOString()
+                });
+            }
         });
 
         res.status(201).json({ message: 'Organization created successfully' });
@@ -155,20 +161,42 @@ exports.acceptInvite = async (req, res) => {
             return res.status(403).json({ error: 'This invite was sent to a different email address' });
         }
 
+        // Get Organization Name for the array
+        const orgRef = db.collection('organizations').doc(inviteData.organizationId);
+        const orgDoc = await orgRef.get();
+        const orgName = orgDoc.exists ? orgDoc.data().name : 'Unknown Organization';
+
+        // Check if user exists
+        const staffDoc = await db.collection('staff').doc(uid).get();
+
         // Run transaction
         await db.runTransaction(async (t) => {
             // Mark invite as accepted
             t.update(inviteRef, { status: 'accepted', acceptedBy: uid, acceptedAt: new Date().toISOString() });
 
-            // Create Staff record
+            // Create or Update Staff record
             const newStaffRef = db.collection('staff').doc(uid);
-            t.set(newStaffRef, {
-                uid,
-                email,
-                organizationId: inviteData.organizationId,
-                role: 'member',
-                createdAt: new Date().toISOString()
-            });
+            
+            if (staffDoc.exists) {
+                const existingData = staffDoc.data();
+                // Check if already in this org
+                const isAlreadyMember = existingData.organizations?.some(org => org.id === inviteData.organizationId);
+                if (!isAlreadyMember) {
+                    const newOrgs = [...(existingData.organizations || []), { id: inviteData.organizationId, name: orgName, role: 'member' }];
+                    t.update(newStaffRef, {
+                        organizations: newOrgs,
+                        activeOrganizationId: inviteData.organizationId // switch to new org
+                    });
+                }
+            } else {
+                t.set(newStaffRef, {
+                    uid,
+                    email,
+                    activeOrganizationId: inviteData.organizationId,
+                    organizations: [{ id: inviteData.organizationId, name: orgName, role: 'member' }],
+                    createdAt: new Date().toISOString()
+                });
+            }
         });
 
         res.status(200).json({ message: 'Successfully joined organization' });
@@ -180,9 +208,57 @@ exports.acceptInvite = async (req, res) => {
 
 exports.getTeam = async (req, res) => {
     try {
-        const snapshot = await db.collection('staff').where('organizationId', '==', req.user.organizationId).get();
-        const team = snapshot.docs.map(doc => doc.data());
+        const snapshot = await db.collection('staff').get();
+        const team = snapshot.docs
+            .map(doc => doc.data())
+            .filter(staff => staff.organizations?.some(org => org.id === req.user.organizationId))
+            .map(staff => {
+                const orgInfo = staff.organizations.find(org => org.id === req.user.organizationId);
+                return {
+                    uid: staff.uid,
+                    email: staff.email,
+                    role: orgInfo.role,
+                    createdAt: staff.createdAt
+                };
+            });
+            
         res.status(200).json(team);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.getMyOrgs = async (req, res) => {
+    try {
+        const staffDoc = await db.collection('staff').doc(req.user.uid).get();
+        if (!staffDoc.exists) return res.status(200).json([]);
+        res.status(200).json({
+            organizations: staffDoc.data().organizations || [],
+            activeOrganizationId: staffDoc.data().activeOrganizationId
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.switchOrg = async (req, res) => {
+    try {
+        const { targetOrgId } = req.body;
+        if (!targetOrgId) return res.status(400).json({ error: 'targetOrgId is required' });
+
+        const staffRef = db.collection('staff').doc(req.user.uid);
+        const staffDoc = await staffRef.get();
+        if (!staffDoc.exists) return res.status(404).json({ error: 'User not found' });
+
+        const staffData = staffDoc.data();
+        const isMember = staffData.organizations?.some(org => org.id === targetOrgId);
+
+        if (!isMember) {
+            return res.status(403).json({ error: 'You are not a member of this organization' });
+        }
+
+        await staffRef.update({ activeOrganizationId: targetOrgId });
+        res.status(200).json({ message: 'Switched organization successfully' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
