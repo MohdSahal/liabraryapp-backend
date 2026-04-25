@@ -24,6 +24,7 @@ app.use('/uploads', express.static('uploads'));
 // app.use('/api/auth', require('./routes/authRoutes'));
 
 // Protected Routes
+app.use('/api/org', require('./routes/orgRoutes'));
 app.use('/api/books', verifyToken, require('./routes/bookRoutes'));
 app.use('/api/users', verifyToken, require('./routes/userRoutes'));
 app.use('/api/transactions', verifyToken, require('./routes/transactionRoutes'));

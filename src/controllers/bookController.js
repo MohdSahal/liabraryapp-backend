@@ -56,6 +56,7 @@ exports.createBook = async (req, res) => {
             description,
             isAvailable: isAvailable === 'true' || isAvailable === true,
             imageUrl,
+            organizationId: req.user.organizationId,
             createdAt: new Date().toISOString()
         };
 
@@ -71,7 +72,7 @@ exports.createBook = async (req, res) => {
 exports.getBooks = async (req, res) => {
     try {
         const { category, language, search } = req.query;
-        let query = collection;
+        let query = collection.where('organizationId', '==', req.user.organizationId);
 
         if (category) query = query.where('category', '==', category);
         if (language) query = query.where('language', '==', language);
@@ -97,7 +98,7 @@ exports.getBooks = async (req, res) => {
 exports.getBookById = async (req, res) => {
     try {
         const doc = await collection.doc(req.params.id).get();
-        if (!doc.exists) {
+        if (!doc.exists || doc.data().organizationId !== req.user.organizationId) {
             return res.status(404).json({ error: 'Book not found' });
         }
         res.status(200).json({ id: doc.id, ...doc.data() });
@@ -112,6 +113,11 @@ exports.updateBook = async (req, res) => {
         const file = req.file;
 
         let updates = { ...req.body };
+        
+        const doc = await collection.doc(req.params.id).get();
+        if (!doc.exists || doc.data().organizationId !== req.user.organizationId) {
+            return res.status(404).json({ error: 'Book not found' });
+        }
 
         // Handle image updates or removal
         if (file) {
@@ -136,6 +142,10 @@ exports.updateBook = async (req, res) => {
 
 exports.deleteBook = async (req, res) => {
     try {
+        const doc = await collection.doc(req.params.id).get();
+        if (!doc.exists || doc.data().organizationId !== req.user.organizationId) {
+            return res.status(404).json({ error: 'Book not found' });
+        }
         await collection.doc(req.params.id).delete();
         res.status(200).json({ message: 'Book deleted successfully' });
     } catch (error) {
@@ -165,6 +175,7 @@ exports.bulkCreateBooks = async (req, res) => {
                 description: description || '',
                 isAvailable: isAvailable === undefined ? true : (isAvailable === 'true' || isAvailable === true),
                 imageUrl: '', // Bulk import doesn't support images for now
+                organizationId: req.user.organizationId,
                 createdAt: new Date().toISOString()
             };
             batch.set(docRef, newBook);

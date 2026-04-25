@@ -5,10 +5,11 @@ exports.getDashboardStats = async (req, res) => {
         const today = new Date().toISOString();
 
         const [booksRes, usersRes, transactionsRes, overdueRes] = await Promise.allSettled([
-            db.collection('books').get(),
-            db.collection('users').get(),
-            db.collection('transactions').get(),
+            db.collection('books').where('organizationId', '==', req.user.organizationId).get(),
+            db.collection('users').where('organizationId', '==', req.user.organizationId).get(),
+            db.collection('transactions').where('organizationId', '==', req.user.organizationId).get(),
             db.collection('transactions')
+                .where('organizationId', '==', req.user.organizationId)
                 .where('status', '==', 'Issued')
                 .where('expectedReturnDate', '<', today)
                 .get()

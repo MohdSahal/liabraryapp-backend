@@ -23,8 +23,8 @@ exports.createUser = async (req, res) => {
         const { name, email, phone } = req.body;
         const file = req.file;
 
-        // Check if email exists
-        const snapshot = await collection.where('email', '==', email).get();
+        // Check if email exists in this organization
+        const snapshot = await collection.where('email', '==', email).where('organizationId', '==', req.user.organizationId).get();
         if (!snapshot.empty) {
             return res.status(400).json({ error: 'User with this email already exists' });
         }
@@ -39,6 +39,7 @@ exports.createUser = async (req, res) => {
             email,
             phone,
             imageUrl,
+            organizationId: req.user.organizationId,
             createdAt: new Date().toISOString()
         };
 
@@ -52,7 +53,7 @@ exports.createUser = async (req, res) => {
 exports.getUsers = async (req, res) => {
     try {
         const { search } = req.query;
-        const snapshot = await collection.get();
+        const snapshot = await collection.where('organizationId', '==', req.user.organizationId).get();
         let users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         if (search) {
@@ -72,7 +73,7 @@ exports.getUsers = async (req, res) => {
 exports.getUserById = async (req, res) => {
     try {
         const doc = await collection.doc(req.params.id).get();
-        if (!doc.exists) {
+        if (!doc.exists || doc.data().organizationId !== req.user.organizationId) {
             return res.status(404).json({ error: 'User not found' });
         }
         res.status(200).json({ id: doc.id, ...doc.data() });
@@ -87,6 +88,11 @@ exports.updateUser = async (req, res) => {
         const file = req.file;
 
         let updates = { ...req.body };
+
+        const doc = await collection.doc(req.params.id).get();
+        if (!doc.exists || doc.data().organizationId !== req.user.organizationId) {
+            return res.status(404).json({ error: 'User not found' });
+        }
 
         if (file) {
             updates.imageUrl = await uploadImage(file);
@@ -105,6 +111,10 @@ exports.updateUser = async (req, res) => {
 
 exports.deleteUser = async (req, res) => {
     try {
+        const doc = await collection.doc(req.params.id).get();
+        if (!doc.exists || doc.data().organizationId !== req.user.organizationId) {
+            return res.status(404).json({ error: 'User not found' });
+        }
         await collection.doc(req.params.id).delete();
         res.status(200).json({ message: 'User deleted successfully' });
     } catch (error) {
@@ -120,7 +130,7 @@ exports.bulkCreateUsers = async (req, res) => {
         }
 
         // Fetch existing emails to avoid duplicates
-        const snapshot = await collection.get();
+        const snapshot = await collection.where('organizationId', '==', req.user.organizationId).get();
         const existingEmails = new Set(snapshot.docs.map(doc => doc.data().email));
 
         const batch = db.batch();
@@ -135,6 +145,7 @@ exports.bulkCreateUsers = async (req, res) => {
                 name,
                 email,
                 phone: phone || '',
+                organizationId: req.user.organizationId,
                 createdAt: new Date().toISOString()
             });
             existingEmails.add(email); // Add to local set for this batch's sake

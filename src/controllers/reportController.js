@@ -30,7 +30,7 @@ const getISTBoundary = (dateStr, isEnd = false) => {
 exports.getIssuedBooksReport = async (req, res) => {
     try {
         const { from, to, bookId, userId } = req.query;
-        let query = transactionsCollection;
+        let query = transactionsCollection.where('organizationId', '==', req.user.organizationId);
 
         if (from) query = query.where('issueDate', '>=', getISTBoundary(from));
         if (to) query = query.where('issueDate', '<=', getISTBoundary(to, true));
@@ -48,7 +48,7 @@ exports.getIssuedBooksReport = async (req, res) => {
 exports.getReturnedBooksReport = async (req, res) => {
     try {
         const { from, to, bookId, userId } = req.query;
-        let query = transactionsCollection.where('status', '==', 'Returned');
+        let query = transactionsCollection.where('organizationId', '==', req.user.organizationId).where('status', '==', 'Returned');
 
         if (from) query = query.where('actualReturnDate', '>=', getISTBoundary(from));
         if (to) query = query.where('actualReturnDate', '<=', getISTBoundary(to, true));
@@ -67,7 +67,9 @@ exports.getOverdueReport = async (req, res) => {
     try {
         const { bookId, userId } = req.query;
         const today = new Date().toISOString();
-        let query = transactionsCollection.where('status', '==', 'Issued')
+        let query = transactionsCollection
+            .where('organizationId', '==', req.user.organizationId)
+            .where('status', '==', 'Issued')
             .where('expectedReturnDate', '<', today);
 
         if (bookId) query = query.where('bookId', '==', bookId);
@@ -83,7 +85,7 @@ exports.getOverdueReport = async (req, res) => {
 
 exports.getTopBooks = async (req, res) => {
     try {
-        const snapshot = await transactionsCollection.get();
+        const snapshot = await transactionsCollection.where('organizationId', '==', req.user.organizationId).get();
         const transactions = snapshot.docs.map(doc => doc.data());
 
         const bookCounts = {};

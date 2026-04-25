@@ -10,12 +10,12 @@ exports.issueBook = async (req, res) => {
 
         // Check if book exists and is available
         const bookDoc = await booksCollection.doc(bookId).get();
-        if (!bookDoc.exists) return res.status(404).json({ error: 'Book not found' });
+        if (!bookDoc.exists || bookDoc.data().organizationId !== req.user.organizationId) return res.status(404).json({ error: 'Book not found' });
         if (!bookDoc.data().isAvailable) return res.status(400).json({ error: 'Book is currently not available' });
 
         // Check if user exists
         const userDoc = await usersCollection.doc(userId).get();
-        if (!userDoc.exists) return res.status(404).json({ error: 'User not found' });
+        if (!userDoc.exists || userDoc.data().organizationId !== req.user.organizationId) return res.status(404).json({ error: 'User not found' });
 
         // Create Transaction
         const issueDate = req.body.issueDate
@@ -30,7 +30,8 @@ exports.issueBook = async (req, res) => {
             issueDate,
             expectedReturnDate: expectedReturnDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
             status: 'Issued',
-            actualReturnDate: null
+            actualReturnDate: null,
+            organizationId: req.user.organizationId
         };
 
         // Run as transaction (atomic)
@@ -51,7 +52,7 @@ exports.returnBook = async (req, res) => {
         const { id } = req.params; // Transaction ID
 
         const transactionDoc = await transactionsCollection.doc(id).get();
-        if (!transactionDoc.exists) return res.status(404).json({ error: 'Transaction not found' });
+        if (!transactionDoc.exists || transactionDoc.data().organizationId !== req.user.organizationId) return res.status(404).json({ error: 'Transaction not found' });
 
         const transactionData = transactionDoc.data();
         if (transactionData.status === 'Returned') return res.status(400).json({ error: 'Book already returned' });
@@ -73,7 +74,7 @@ exports.returnBook = async (req, res) => {
 exports.getTransactions = async (req, res) => {
     try {
         const { status } = req.query; // 'Issued' | 'Returned' | 'Overdue' (Custom logic for overdue)
-        let query = transactionsCollection;
+        let query = transactionsCollection.where('organizationId', '==', req.user.organizationId);
 
         if (status && status !== 'Overdue') {
             query = query.where('status', '==', status);
@@ -95,7 +96,9 @@ exports.getOverdueTransactions = async (req, res) => {
         // Ideally use Timestamps, but ISO string is simple for now. 
         // Logic: status == 'Issued' AND expectedReturnDate < today
 
-        const snapshot = await transactionsCollection.where('status', '==', 'Issued')
+        const snapshot = await transactionsCollection
+            .where('organizationId', '==', req.user.organizationId)
+            .where('status', '==', 'Issued')
             .where('expectedReturnDate', '<', today)
             .get();
 

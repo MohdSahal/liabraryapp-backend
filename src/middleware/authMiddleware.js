@@ -1,4 +1,4 @@
-const { admin } = require('../config/firebase');
+const { admin, db } = require('../config/firebase');
 
 const verifyToken = async (req, res, next) => {
     const token = req.headers.authorization?.split(' ')[1];
@@ -9,7 +9,26 @@ const verifyToken = async (req, res, next) => {
 
     try {
         const decodedToken = await admin.auth().verifyIdToken(token);
-        req.user = decodedToken;
+        
+        // Fetch staff record to get organization details
+        const staffDoc = await db.collection('staff').doc(decodedToken.uid).get();
+        
+        if (!staffDoc.exists) {
+            // For signup/create org, we might not have a staff record yet.
+            if (req.originalUrl.includes('/api/org/signup') || req.originalUrl.includes('/api/org/accept-invite')) {
+                req.user = decodedToken;
+                return next();
+            }
+            return res.status(403).json({ error: 'Unauthorized: User is not assigned to an organization.' });
+        }
+
+        const staffData = staffDoc.data();
+        req.user = {
+            ...decodedToken,
+            organizationId: staffData.organizationId,
+            role: staffData.role
+        };
+        
         next();
     } catch (error) {
         console.error("Token verification failed:", error);
