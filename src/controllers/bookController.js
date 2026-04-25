@@ -6,7 +6,7 @@ const collection = db.collection('books');
 
 // Helper to upload image
 // Helper to upload image (Local Storage)
-const uploadImage = async (file) => {
+const uploadImage = async (file, req) => {
     if (!file) return null;
 
     // Create uploads directory if not exists
@@ -21,17 +21,8 @@ const uploadImage = async (file) => {
     // Save buffer to file
     fs.writeFileSync(filePath, file.buffer);
 
-    // Return the URL relative to the server
-    // Assuming the server is running on the same host (localhost or deployed)
-    // The frontend will need to prepend the API base URL or server host if it's just a path
-    // But since the frontend uses full URLs for images usually, let's return a path that the frontend can use.
-    // If the frontend accesses images directly, it needs the full URL.
-    // For now, let's return the full URL assuming localhost:5000 or relative path if handled by frontend.
-    // Better: Return the full URL if we knew the host. 
-    // SAFEST: Return the path `/uploads/${fileName}` and ensure frontend handles it.
-    // Actually, `http://localhost:5000/uploads/...` is best for immediate fix.
-
-    const baseUrl = process.env.API_URL || 'http://localhost:5000'; // Default to localhost
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const baseUrl = process.env.API_URL || `${protocol}://${req.get('host')}`;
     return `${baseUrl}/uploads/${fileName}`;
 };
 
@@ -43,7 +34,7 @@ exports.createBook = async (req, res) => {
         let imageUrl = '';
         if (file) {
             console.log('File received:', file.originalname, file.mimetype);
-            imageUrl = await uploadImage(file);
+            imageUrl = await uploadImage(file, req);
             console.log('Generated Signed URL:', imageUrl);
         } else {
             console.log('No file received in request');
@@ -121,7 +112,7 @@ exports.updateBook = async (req, res) => {
 
         // Handle image updates or removal
         if (file) {
-            updates.imageUrl = await uploadImage(file);
+            updates.imageUrl = await uploadImage(file, req);
         } else if (removeImage === 'true') {
             updates.imageUrl = '';
         }

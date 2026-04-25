@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Helper to upload image (Same as bookController)
-const uploadImage = async (file) => {
+const uploadImage = async (file, req) => {
     if (!file) return null;
     const uploadDir = path.join(__dirname, '../../uploads');
     if (!fs.existsSync(uploadDir)) {
@@ -14,7 +14,9 @@ const uploadImage = async (file) => {
     const fileName = `${Date.now()}_${file.originalname.replace(/\s+/g, '_')}`;
     const filePath = path.join(uploadDir, fileName);
     fs.writeFileSync(filePath, file.buffer);
-    const baseUrl = process.env.API_URL || 'http://localhost:5000';
+    
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const baseUrl = process.env.API_URL || `${protocol}://${req.get('host')}`;
     return `${baseUrl}/uploads/${fileName}`;
 };
 
@@ -31,7 +33,7 @@ exports.createUser = async (req, res) => {
 
         let imageUrl = '';
         if (file) {
-            imageUrl = await uploadImage(file);
+            imageUrl = await uploadImage(file, req);
         }
 
         const newUser = {
@@ -95,7 +97,7 @@ exports.updateUser = async (req, res) => {
         }
 
         if (file) {
-            updates.imageUrl = await uploadImage(file);
+            updates.imageUrl = await uploadImage(file, req);
         } else if (removeImage === 'true') {
             updates.imageUrl = '';
         }
