@@ -80,8 +80,11 @@ exports.getTransactions = async (req, res) => {
             query = query.where('status', '==', status);
         }
 
-        const snapshot = await query.orderBy('issueDate', 'desc').get();
+        const snapshot = await query.get();
         const transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Sort by issueDate descending in memory to avoid requiring a Firestore composite index
+        transactions.sort((a, b) => new Date(b.issueDate) - new Date(a.issueDate));
 
         res.status(200).json(transactions);
     } catch (error) {
